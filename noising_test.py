@@ -8,7 +8,7 @@ parser = argparse.ArgumentParser()
 args = parser.parse_args()
 args.batch_size = 1  # 5
 args.image_size = 64
-args.dataset_path = r"C:\Users\dome\datasets\landscape_img_folder"
+args.dataset_path = r"/mnt/f/datasets/landscape_pictures"
 
 dataloader = get_data(args)
 

@@ -25,6 +25,7 @@ class Diffusion:
         self.alpha_hat = torch.cumprod(self.alpha, dim=0)
 
     def prepare_noise_schedule(self):
+        # Use a linear noise schedule
         return torch.linspace(self.beta_start, self.beta_end, self.noise_steps)
 
     def noise_images(self, x, t):
@@ -37,6 +38,7 @@ class Diffusion:
         return torch.randint(low=1, high=self.noise_steps, size=(n,))
 
     def sample(self, model, n):
+        """Sample n images. See 'Algorithm 2 Sampling' from DDPM paper."""
         logging.info(f"Sampling {n} new images....")
         model.eval()
         with torch.no_grad():
@@ -53,12 +55,14 @@ class Diffusion:
                     noise = torch.zeros_like(x)
                 x = 1 / torch.sqrt(alpha) * (x - ((1 - alpha) / (torch.sqrt(1 - alpha_hat))) * predicted_noise) + torch.sqrt(beta) * noise
         model.train()
+        # Bring to valid pixel range
         x = (x.clamp(-1, 1) + 1) / 2
         x = (x * 255).type(torch.uint8)
         return x
 
 
 def train(args):
+    """Training loop. See 'Algorithm 1 Training' from DDPM paper."""
     setup_logging(args.run_name)
     device = args.device
     dataloader = get_data(args)
@@ -99,7 +103,7 @@ def launch():
     args.epochs = 500
     args.batch_size = 12
     args.image_size = 64
-    args.dataset_path = r"C:\Users\dome\datasets\landscape_img_folder"
+    args.dataset_path = r"/mnt/f/datasets/landscape_pictures"
     args.device = "cuda"
     args.lr = 3e-4
     train(args)

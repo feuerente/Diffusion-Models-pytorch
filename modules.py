@@ -5,6 +5,7 @@ import torch.nn.functional as F
 
 
 class EMA:
+    """Exponential Moving Average"""
     def __init__(self, beta):
         super().__init__()
         self.beta = beta
@@ -76,7 +77,7 @@ class DoubleConv(nn.Module):
             return self.double_conv(x)
 
 
-class Down(nn.Module):
+class DownSample(nn.Module):
     def __init__(self, in_channels, out_channels, emb_dim=256):
         super().__init__()
         self.maxpool_conv = nn.Sequential(
@@ -85,6 +86,7 @@ class Down(nn.Module):
             DoubleConv(in_channels, out_channels),
         )
 
+        # Bring time embedding to proper dimension.
         self.emb_layer = nn.Sequential(
             nn.SiLU(),
             nn.Linear(
@@ -99,7 +101,7 @@ class Down(nn.Module):
         return x + emb
 
 
-class Up(nn.Module):
+class UpSample(nn.Module):
     def __init__(self, in_channels, out_channels, emb_dim=256):
         super().__init__()
 
@@ -109,6 +111,7 @@ class Up(nn.Module):
             DoubleConv(in_channels, out_channels, in_channels // 2),
         )
 
+        # Bring time embedding to proper dimension.
         self.emb_layer = nn.Sequential(
             nn.SiLU(),
             nn.Linear(
@@ -118,6 +121,7 @@ class Up(nn.Module):
         )
 
     def forward(self, x, skip_x, t):
+        # Include skip connection.
         x = self.up(x)
         x = torch.cat([skip_x, x], dim=1)
         x = self.conv(x)
@@ -127,30 +131,41 @@ class Up(nn.Module):
 
 class UNet(nn.Module):
     def __init__(self, c_in=3, c_out=3, time_dim=256, device="cuda"):
+        """
+
+        :param c_in:
+        :param c_out:
+        :param time_dim: dimension of timestep embedding
+        :param device:
+        """
         super().__init__()
         self.device = device
         self.time_dim = time_dim
+
+        # Encoder
         self.inc = DoubleConv(c_in, 64)
-        self.down1 = Down(64, 128)
+        self.down1 = DownSample(64, 128)
         self.sa1 = SelfAttention(128, 32)
-        self.down2 = Down(128, 256)
+        self.down2 = DownSample(128, 256)
         self.sa2 = SelfAttention(256, 16)
-        self.down3 = Down(256, 256)
+        self.down3 = DownSample(256, 256)
         self.sa3 = SelfAttention(256, 8)
 
+        # Bottleneck
         self.bot1 = DoubleConv(256, 512)
         self.bot2 = DoubleConv(512, 512)
         self.bot3 = DoubleConv(512, 256)
 
-        self.up1 = Up(512, 128)
+        self.up1 = UpSample(512, 128)
         self.sa4 = SelfAttention(128, 16)
-        self.up2 = Up(256, 64)
+        self.up2 = UpSample(256, 64)
         self.sa5 = SelfAttention(64, 32)
-        self.up3 = Up(128, 64)
+        self.up3 = UpSample(128, 64)
         self.sa6 = SelfAttention(64, 64)
         self.outc = nn.Conv2d(64, c_out, kernel_size=1)
 
     def pos_encoding(self, t, channels):
+        """Embed timesteps in a sinusoidal embedding."""
         inv_freq = 1.0 / (
             10000
             ** (torch.arange(0, channels, 2, device=self.device).float() / channels)
@@ -161,9 +176,16 @@ class UNet(nn.Module):
         return pos_enc
 
     def forward(self, x, t):
+        """
+
+        :param x: Noised images
+        :param t: Timesteps
+        :return:
+        """
         t = t.unsqueeze(-1).type(torch.float)
         t = self.pos_encoding(t, self.time_dim)
 
+        # Encoder
         x1 = self.inc(x)
         x2 = self.down1(x1, t)
         x2 = self.sa1(x2)
@@ -172,10 +194,13 @@ class UNet(nn.Module):
         x4 = self.down3(x3, t)
         x4 = self.sa3(x4)
 
+        # Bottleneck
         x4 = self.bot1(x4)
         x4 = self.bot2(x4)
         x4 = self.bot3(x4)
 
+        # Decoder
+        # With skip connections from encoder.
         x = self.up1(x4, x3, t)
         x = self.sa4(x)
         x = self.up2(x, x2, t)
@@ -186,28 +211,28 @@ class UNet(nn.Module):
         return output
 
 
-class UNet_conditional(nn.Module):
+class UNetConditional(nn.Module):
     def __init__(self, c_in=3, c_out=3, time_dim=256, num_classes=None, device="cuda"):
         super().__init__()
         self.device = device
         self.time_dim = time_dim
         self.inc = DoubleConv(c_in, 64)
-        self.down1 = Down(64, 128)
+        self.down1 = DownSample(64, 128)
         self.sa1 = SelfAttention(128, 32)
-        self.down2 = Down(128, 256)
+        self.down2 = DownSample(128, 256)
         self.sa2 = SelfAttention(256, 16)
-        self.down3 = Down(256, 256)
+        self.down3 = DownSample(256, 256)
         self.sa3 = SelfAttention(256, 8)
 
         self.bot1 = DoubleConv(256, 512)
         self.bot2 = DoubleConv(512, 512)
         self.bot3 = DoubleConv(512, 256)
 
-        self.up1 = Up(512, 128)
+        self.up1 = UpSample(512, 128)
         self.sa4 = SelfAttention(128, 16)
-        self.up2 = Up(256, 64)
+        self.up2 = UpSample(256, 64)
         self.sa5 = SelfAttention(64, 32)
-        self.up3 = Up(128, 64)
+        self.up3 = UpSample(128, 64)
         self.sa6 = SelfAttention(64, 64)
         self.outc = nn.Conv2d(64, c_out, kernel_size=1)
 
@@ -228,6 +253,7 @@ class UNet_conditional(nn.Module):
         t = t.unsqueeze(-1).type(torch.float)
         t = self.pos_encoding(t, self.time_dim)
 
+        # Add label to timestep embedding
         if y is not None:
             t += self.label_emb(y)
 
@@ -255,7 +281,7 @@ class UNet_conditional(nn.Module):
 
 if __name__ == '__main__':
     # net = UNet(device="cpu")
-    net = UNet_conditional(num_classes=10, device="cpu")
+    net = UNetConditional(num_classes=10, device="cpu")
     print(sum([p.numel() for p in net.parameters()]))
     x = torch.randn(3, 3, 64, 64)
     t = x.new_tensor([500] * x.shape[0]).long()
