@@ -108,18 +108,27 @@ def launch():
     args.lr = 3e-4
     train(args)
 
+def sample_img():
+    device = "cuda"
+    # device = "cpu"
+    noise_steps=1000
+    img_to_sample=8
+
+    model = UNet(device=device).to(device)
+    ckpt_path = "./models/dome272/unconditional_ckpt.pt"
+    ckpt = torch.load(ckpt_path, map_location=device)
+    model.load_state_dict(ckpt)
+
+    diffusion = Diffusion(noise_steps=noise_steps, img_size=64, device=device)
+    x = diffusion.sample(model, img_to_sample)
+    print(x.shape)
+
+    plt.figure(figsize=(32, 32))
+    plt.imshow(torch.cat([
+        torch.cat([i for i in x.cpu()], dim=-1),
+    ], dim=-2).permute(1, 2, 0).cpu())
+    plt.show()
 
 if __name__ == '__main__':
     launch()
-    # device = "cuda"
-    # model = UNet().to(device)
-    # ckpt = torch.load("./working/orig/ckpt.pt")
-    # model.load_state_dict(ckpt)
-    # diffusion = Diffusion(img_size=64, device=device)
-    # x = diffusion.sample(model, 8)
-    # print(x.shape)
-    # plt.figure(figsize=(32, 32))
-    # plt.imshow(torch.cat([
-    #     torch.cat([i for i in x.cpu()], dim=-1),
-    # ], dim=-2).permute(1, 2, 0).cpu())
-    # plt.show()
+    # sample_img()
